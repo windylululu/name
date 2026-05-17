@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>말랑말랑 이름 글자 잡기 게임</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #f0f8ff;
+            font-family: 'Nanum Gothic', sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* 배경 카메라 및 캔버스 */
+        #video, #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+        }
+        #video {
+            transform: scaleX(-1); /* 거울 모드 */
+            z-index: 1;
+        }
+        #gameCanvas {
+            z-index: 2;
+            pointer-events: none; /* 클릭 이벤트는 HTML 요소가 받도록 설정 */
+        }
+
+        /* UI 레이어 */
+        .ui-container {
+            position: absolute;
+            z-index: 3;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.85);
+            padding: 30px;
+            border-radius: 25px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 90%;
+        }
+
+        h1 {
+            color: #ff6b6b;
+            margin-top: 0;
+            font-size: 2rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+
+        input {
+            padding: 12px 20px;
+            font-size: 1.5rem;
+            border: 3px solid #4dadff;
+            border-radius: 15px;
+            text-align: center;
+            outline: none;
+            width: 80%;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 12px 30px;
+            font-size: 1.5rem;
+            background-color: #4dadff;
+            color: white;
+            border: none;
+            border-radius: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+
+        /* 게임 상단 이름 바구니 */
+        #nameDisplay {
+            position: absolute;
+            top: 20px;
+            z-index: 3;
+            display: flex;
+            gap: 15px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px 30px;
+            border-radius: 50px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            display: none;
+        }
+
+        .letter-box {
+            width: 60px;
+            height: 60px;
+            border: 3px dashed #aaa;
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2rem;
+            font-weight: bold;
+            color: #ccc;
+            background: #fafafa;
+            transition: all 0.3s;
+        }
+
+        .letter-box.filled {
+            border: 3px solid #2ecc71;
+            color: white;
+            background: #2ecc71;
+            transform: scale(1.05);
+        }
+
+        /* 화면에 떨어지는 글자 스타일 */
+        .falling-letter {
+            position: absolute;
+            z-index: 4;
+            width: 70px;
+            height: 70px;
+            background: #ffcc00;
+            color: #333;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.2rem;
+            font-weight: bold;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+            cursor: pointer;
+            user-select: none;
+            animation: bounce 0.5s infinite alternate;
+        }
+
+        /* 결과 팝업 */
+        #resultPopup {
+            display: none;
+            position: absolute;
+            z-index: 5;
+            background: white;
+            padding: 40px;
+            border-radius: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        #resultPopup h2 {
+            font-size: 3rem;
+            color: #ff3366;
+            margin-bottom: 20px;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 웹캠 및 이펙트용 캔버스 -->
+    <video id="video" autoplay playsinline></video>
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- 시작 화면 UI -->
+    <div id="startUI" class="ui-container">
+        <h1>🎈 내 이름을 잡아라! 🎈</h1>
+        <p style="color:#666; margin-bottom:15px;">이름을 입력하고 시작 버튼을 눌러요!</p>
+        <input type="text" id="userName" placeholder="이름 입력" maxlength="5" autocomplete="off">
+        <button onclick="startGame()">시작하기</button>
+    </div>
+
+    <!-- 게임 중 상단 이름 모음창 -->
+    <div id="nameDisplay"></div>
+
+    <!-- 성공 팝업 -->
+    <div id="resultPopup">
+        <h2>🎉 대단해요! 성공! 🎉</h2>
+        <button onclick="resetGame()" style="background-color: #ff6b6b;">다시 하기</button>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const startUI = document.getElementById('startUI');
+        const nameDisplay = document.getElementById('nameDisplay');
+        const resultPopup = document.getElementById('resultPopup');
+        const userNameInput = document.getElementById('userName');
+
+        let currentName = "";
+        let nameLetters = [];
+        let collectedFlags = []; // 글자를 모았는지 여부
+        let fallingElements = [];
+        let animationFrameId;
+        let particles = []; // 폭죽 파티클
+
+        // 화면 크기 맞춤
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // 1. 카메라 시작 설정
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: window.innerWidth, height: window.innerHeight }
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("카메라 접근 불가:", err);
+                alert("카메라를 허용해 주셔야 배경화면이 보입니다!");
+            }
+        }
+        initCamera();
+
+        // 2. 게임 시작
+        function startGame() {
+            currentName = userNameInput.value.trim();
+            if (!currentName) {
+                alert("이름을 입력해 주세요!");
+                return;
+            }
+
+            nameLetters = currentName.split('');
+            collectedFlags = new Array(nameLetters.length).fill(false);
+            
+            // UI 전환
+            startUI.style.display = 'none';
+            setupNameDisplay();
+            
+            // 글자 떨어뜨리기 시작
+            spawnLetters();
+            
+            // 이펙트 애니메이션 시작 loop
+            animate();
+        }
+
+        // 상단 이름 바구니 생성
+        function setupNameDisplay() {
+            nameDisplay.innerHTML = '';
+            nameDisplay.style.display = 'flex';
+            nameLetters.forEach((letter, index) => {
+                const box = document.createElement('div');
+                box.classList.add('letter-box');
+                box.id = `box-${index}`;
+                box.innerText = '?';
+                nameDisplay.appendChild(box);
+            });
+        }
+
+        // 3. 천천히 떨어지는 글자 생성
+        function spawnLetters() {
+            // 이름의 낱글자들을 기반으로 HTML 요소 동적 생성
+            nameLetters.forEach((letter, index) => {
+                setTimeout(() => {
+                    if (currentName === "") return; // 리셋된 경우 방지
+
+                    const el = document.createElement('div');
+                    el.classList.add('falling-letter');
+                    el.innerText = letter;
+                    
+                    // 무작위 가로 위치 설정
+                    const randomX = Math.random() * (window.innerWidth - 100) + 10;
+                    el.style.left = `${randomX}px`;
+                    el.style.top = `-80px`; // 화면 위쪽 바깥에서 시작
+
+                    // 색상을 다양하게 설정
+                    const colors = ['#ffcc00', '#ff6b6b', '#4dadff', '#9b59b6', '#1abc9c'];
+                    el.style.background = colors[index % colors.length];
+
+                    document.body.appendChild(el);
+
+                    // 데이터 객체 저장
+                    const item = {
+                        element: el,
+                        letter: letter,
+                        index: index,
+                        y: -80,
+                        speed: Math.random() * 1.5 + 1.5 // 천천히 내려오는 속도 (1.5 ~ 3)
+                    };
+                    fallingElements.push(item);
+
+                    // 클릭(터치) 이벤트 등록 -> 글자 잡기
+                    el.addEventListener('mousedown', () => catchLetter(item));
+                    el.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        catchLetter(item);
+                    });
+
+                }, index * 1200); // 1.2초 간격으로 글자가 하나씩 순차적으로 내려옴
+            });
+        }
+
+        // 4. 글자 잡기 로직
+        function catchLetter(item) {
+            // 상단 해당 위치에 글자 안착 효과
+            const targetBox = document.getElementById(`box-${item.index}`);
+            if (targetBox && !collectedFlags[item.index]) {
+                targetBox.innerText = item.letter;
+                targetBox.classList.add('filled');
+                collectedFlags[item.index] = true;
+            }
+
+            // 화면에서 글자 제거
+            if(item.element && item.element.parentNode) {
+                item.element.parentNode.removeChild(item.element);
+            }
+            fallingElements = fallingElements.filter(el => el !== item);
+
+            // 모두 다 잡았는지 확인
+            if (collectedFlags.every(flag => flag === true)) {
+                successGame();
+            }
+        }
+
+        // 5. 루프 프레임 (글자 아래로 이동 및 폭죽 그리기)
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 글자 떨어뜨리기 업데이트
+            fallingElements.forEach(item => {
+                item.y += item.speed;
+                item.element.style.top = `${item.y}px`;
+
+                // 바닥을 벗어나면 다시 위에서 떨어지도록 리셋 (놓쳤을 때 대비)
+                if (item.y > window.innerHeight) {
+                    item.y = -80;
+                    item.style.left = `${Math.random() * (window.innerWidth - 100) + 10}px`;
+                }
+            });
+
+            // 폭죽 파티클 업데이트 및 그리기
+            drawParticles();
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        // 6. 성공 및 폭죽 연출
+        function successGame() {
+            // 남아있을 수 있는 요소 제거
+            clearFallingElements();
+            
+            // 폭죽 파티클 생성
+            createFireworks();
+            
+            // 결과 팝업 노출
+            setTimeout(() => {
+                resultPopup.style.display = 'block';
+            }, 500);
+        }
+
+        // 폭죽 파티클 데이터 생성
+        function createFireworks() {
+            const colors = ['#FF5733', '#33FF57', '#3357FF', '#F3FF33', '#FF33F3', '#33FFF0'];
+            // 화면 여기저기서 터지도록 여러 번 생성
+            for (let f = 0; f < 5; f++) {
+                setTimeout(() => {
+                    const originX = Math.random() * canvas.width;
+                    const originY = Math.random() * (canvas.height * 0.6) + canvas.height * 0.2;
+                    
+                    for (let i = 0; i < 60; i++) {
+                        particles.push({
+                            x: originX,
+                            y: originY,
+                            dx: (Math.random() - 0.5) * 8,
+                            dy: (Math.random() - 0.5) * 8,
+                            size: Math.random() * 4 + 3,
+                            color: colors[Math.floor(Math.random() * colors.length)],
+                            alpha: 1,
+                            decay: Math.random() * 0.015 + 0.01
+                        });
+                    }
+                }, f * 400);
+            }
+        }
+
+        // 캔버스에 폭죽 그리기
+        function drawParticles() {
+            particles.forEach((p, idx) => {
+                p.x += p.dx;
+                p.y += p.dy;
+                p.dy += 0.05; // 중력 효과
+                p.alpha -= p.decay;
+
+                if (p.alpha <= 0) {
+                    particles.splice(idx, 1);
+                    return;
+                }
+
+                ctx.save();
+                ctx.globalAlpha = p.alpha;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = p.color;
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+
+        // 화면상 떠도는 모든 글자 태그 삭제
+        function clearFallingElements() {
+            fallingElements.forEach(item => {
+                if(item.element && item.element.parentNode) {
+                    item.element.parentNode.removeChild(item.element);
+                }
+            });
+            fallingElements = [];
+        }
+
+        // 7. 게임 리셋 (다시 하기)
+        function resetGame() {
+            cancelAnimationFrame(animationFrameId);
+            clearFallingElements();
+            particles = [];
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            currentName = "";
+            userNameInput.value = "";
+            
+            // UI 초기화
+            resultPopup.style.display = 'none';
+            nameDisplay.style.display = 'none';
+            startUI.style.display = 'flex';
+        }
+    </script>
+</body>
+</html>
